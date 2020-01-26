@@ -18,7 +18,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
 
 add_executable(
     smarthmm.test
-    test.cc
+    scientific/ml/test/smart-hmm.cc
 )
 target_link_libraries(
     smarthmm.test

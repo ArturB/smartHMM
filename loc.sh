@@ -1,6 +1,6 @@
 #!/bin/bash
 
-SRC_DIR="src"
+SRC_DIR="src test"
 FILE_EXTS=".h .hpp .cc .cpp CMakeLists.txt"
 SRC_FILES="CMakeLists.txt"
 
