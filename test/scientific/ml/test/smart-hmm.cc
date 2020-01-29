@@ -12,19 +12,32 @@
 // GNU General Public License for more details.
 // **********************************************************************
 
-#include <smart-hmm>
+#include <smart-hmm.h>
 
 int main()
 {
     srand( time( NULL ) );
     arma::mat transitions( 2, 2 );
-    transitions << 0.8 << 0.2 << arma::endr << 0.2 << 0.8 << arma::endr;
+    transitions << 0.9 << 0.1 << arma::endr << 0.1 << 0.9 << arma::endr;
     arma::mat emissions( 2, 4 );
     emissions << 1.0 << 0.0 << 0.0 << 0.0 << arma::endr << 0.0 << 1.0 << 0.0 << 0.0
               << arma::endr;
 
-    scientific::ml::Hmm<char, std::string> h( 5, "abcd", 0 );
+    scientific::ml::Hmm<char, std::string> h( transitions, emissions, "abcd", 0 );
     std::cout << h << std::endl;
-    std::string seq = h.generate_sequence( 100 );
-    std::cout << "Sequence: " << seq << std::endl;
+
+    auto path = h.generate_sequence( 100 );
+    std::cout << "Sequence : " << path.sequence << std::endl;
+    std::cout << "States   : ";
+    for( auto s: path.states ) {
+        std::cout << s;
+    }
+    std::cout << ", path probability = " << path.prob << std::endl;
+
+    auto path_viterbi = h.find_viterbi_path( path.sequence );
+    std::cout << "Viterbi  : ";
+    for( unsigned i = 0; i < path_viterbi.sequence.size(); ++i ) {
+        std::cout << path_viterbi.states[i];
+    }
+    std::cout << std::endl;
 }
