@@ -29,6 +29,7 @@ set(CMAKE_MODULE_PATH
 )
 include(CPack)
 include(CheckCXXCompilerFlag)
+include(GNUInstallDirs)
 include(RequireLibrary)
 
 # Check binary dependencies
@@ -39,7 +40,7 @@ require_library(armadillo "")
 option ( ENABLE_DEBUG "Enable debugging options (bugreports and developers only)" OFF )
 option ( ENABLE_RELEASE "Enable compiler -O3 optimization flags" ON )
 
-set( CMAKE_CXX_FLAGS "" )
+set( CMAKE_CXX_FLAGS "-Wall " )
 if ( ENABLE_DEBUG )
     set( CMAKE_BUILD_TYPE "DEBUG" )
     string ( APPEND CMAKE_CXX_FLAGS "-g -DDEBUG " )
@@ -58,7 +59,6 @@ add_subdirectory ( src )
 add_subdirectory( test )
 
 # Output dirs
-set(CMAKE_INSTALL_PREFIX "/usr/local")
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
@@ -88,9 +88,9 @@ Build output options:
     RUNT_OUT:  ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}
 
 Install options:
-    RUNT_DIR:  ${CMAKE_INSTALL_PREFIX}/bin/${CMAKE_PROJECT_NAME}
-    LIBR_DIR:  ${CMAKE_INSTALL_PREFIX}/lib64/${CMAKE_PROJECT_NAME}
-    INCL_DIR:  ${CMAKE_INSTALL_PREFIX}/include/${CMAKE_PROJECT_NAME}
+    RUN_DIR:  ${CMAKE_INSTALL_FULL_BINDIR}
+    LIB_DIR:  ${CMAKE_INSTALL_FULL_LIBDIR}
+    INC_DIR:  ${CMAKE_INSTALL_FULL_INCLUDEDIR}
 
 Compiler options:
     CXX:            ${CMAKE_CXX_COMPILER}

@@ -30,9 +30,9 @@ target_link_libraries(
 )
 install (
     TARGETS smarthmm
-    LIBRARY DESTINATION "lib64/${CMAKE_PROJECT_NAME}"
+    LIBRARY DESTINATION ${CMAKE_INSTALL_FULL_LIBDIR}
 )
 install(
     FILES scientific/ml/smart-hmm
-    DESTINATION include
+    DESTINATION ${CMAKE_INSTALL_FULL_INCLUDEDIR}
 )

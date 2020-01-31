@@ -4,4 +4,6 @@ bin/*
 build/*
 !build/.gitkeep
 
+data/*
+
 .vscode
