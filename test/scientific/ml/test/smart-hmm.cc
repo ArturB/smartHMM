@@ -16,70 +16,44 @@
 
 int main()
 {
+    std::cout << "Initializing randomness... " << std::endl;
     srand( time( NULL ) );
-    // arma::mat transitions( 2, 2 );
-    // transitions << 0.9 << 0.1 << arma::endr << 0.1 << 0.9 << arma::endr;
-    // arma::mat emissions( 2, 4 );
-    // emissions << 0.99 << 0.0 << 0.01 << 0.0 << arma::endr << 0.0 << 0.99 << 0.01 << 0.0
-    //           << arma::endr;
-
-    // scientific::ml::Hmm<char, std::string> h( transitions, emissions, "abcd", 1 );
-    // std::cout << h << std::endl;
-
-    // auto path = h.generate_sequence( (unsigned) 100 );
-    // // std::cout << "Sequence generated!" << std::endl;
-    // std::cout << "Sequence : " << path.sequence << std::endl;
-    // std::cout << "States   : ";
-    // for( auto s: path.states ) {
-    //     std::cout << s;
-    // }
-    // std::cout << ", path probability = " << pow( 10, path.prob / path.sequence.size() )
-    //           << " per transition" << std::endl;
-
-    // auto path_viterbi = h.find_viterbi_path( path.sequence );
-    // // std::cout << "Viterbi path found!" << std::endl;
-    // std::cout << "Viterbi  : ";
-    // for( unsigned i = 0; i < path_viterbi.sequence.size(); ++i ) {
-    //     std::cout << path_viterbi.states[i];
-    // }
-    // std::cout << ", path probability = " << pow( 10, path_viterbi.prob / path.sequence.size()
-    // )
-    //           << " per transition" << std::endl;
-
     arma::arma_rng::set_seed_random();
+    std::cout << "Done!" << std::endl;
 
-    arma::mat transitions( 2, 2 );
-    transitions << 0.5 << 0.5 << arma::endr << 0.3 << 0.7 << arma::endr;
-    arma::mat emissions( 2, 2 );
-    emissions << 0.3 << 0.7 << arma::endr << 0.8 << 0.2 << arma::endr;
+    // arma::mat transitions( 2, 2 );
+    // transitions << 0.5 << 0.5 << arma::endr << 0.3 << 0.7 << arma::endr;
+    // arma::mat emissions( 2, 2 );
+    // emissions << 0.3 << 0.7 << arma::endr << 0.8 << 0.2 << arma::endr;
+    // scientific::ml::Hmm<char, std::string> h( transitions, emissions, "ne", 0 );
+    // std::string example = "nnnnneennn";
 
-    scientific::ml::Hmm<char, std::string> h( transitions, emissions, "ne", 0 );
-    // scientific::ml::Hmm<char, std::string> h( 2, "artubodzki.g$", 0 );
-    arma::mat pi( 1, 2 );
-    pi << 0.2 << 0.8 << arma::endr;
-    std::cout << "Initial HMM: " << std::endl;
-    std::cout << h << std::endl;
-    std::cout << "pi = " << pi << std::endl;
+    std::cout << "Initializing HMM object... " << std::endl;
+    const unsigned NUM_STATES = 40;
+    scientific::ml::Hmm<char, std::string> h( NUM_STATES, "artubodzki.g$", 0 );
+    std::cout << "Done!" << std::endl;
+    arma::mat pi( 1, NUM_STATES );
+    pi.fill( 1 / double( NUM_STATES ) );
+    std::string example = "artur.brodzki.org$";
 
-    std::string example = "nnnnneennn";
-    // std::string example = "artur.brodzki.org$";
-    for( unsigned i = 0; i < 1; ++i ) {
-        pi = h.learn2( example, pi );
-        h.normalize();
-        std::cout << "Learn step " << i << ", h = " << h << std::endl;
+    // std::cout << "Initial HMM: " << std::endl;
+    // std::cout << h << std::endl;
+    // std::cout << "pi = " << pi << std::endl;
+
+    std::cout << "Learning model..." << std::endl;
+    for( unsigned i = 0; i < 10; ++i ) {
+        auto path = h.find_viterbi_path( example, pi );
+        std::cout << "Learn step " << i + 1 << ", " << path
+                  << ", prob/char = " << pow( 10, path.prob / example.size() ) << std::endl;
+        pi = h.learn( example, pi, 2 );
     }
 
     // std::cout << "New HMM: " << std::endl;
     // std::cout << h << std::endl;
 
-    // for( unsigned k = 0; k < 5; ++k ) {
-    //     auto path = h.generate_sequence( (char) '$' );
-    //     std::cout << "Sequence: " << path.sequence << ", states: ";
-    //     for( unsigned i = 0; i < path.states.size(); ++i ) {
-    //         std::cout << path.states[i] << " ";
-    //     }
-    //     std::cout << std::endl;
-    // }
+    for( unsigned k = 0; k < 5; ++k ) {
+        std::cout << h.generate_sequence( (char) '$' ) << std::endl;
+    }
 
     return 0;
 }

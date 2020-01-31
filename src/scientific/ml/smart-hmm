@@ -56,13 +56,14 @@ class Hmm
             for( auto s: path.states ) {
                 os << s << " ";
             }
-            os << ", prob = " << pow( 10, path.prob );
+            os << ", prob = " << path.prob;
             return os;
         }
     };
 
   private:
     unsigned current_state;
+    arma::mat initial_states;
     arma::mat transitions;
     arma::mat emissions;
     S alphabet;
@@ -72,28 +73,35 @@ class Hmm
     // function returns unsigned from 0 to N-1
     // according to specified probabilities distribution
     static unsigned random_element( const arma::mat& );
-
+    // Normalize transitions and emissions matrices
+    void normalize();
+    // Return internal index of given output character
     unsigned out_index( E ) const;
 
   public:
     // Assumes uniform probability distribution for transitions and emissions
-    Hmm( unsigned num_states, const S&, unsigned );
+    Hmm( unsigned num_states, const S& );
     // Construct an HMM object with given transitions and emissions probabilities
     // Transition and emission probabilities are scaled down to sum 1
-    Hmm( const arma::mat& transitions, const arma::mat& emissions, const S&, unsigned );
+    Hmm( const arma::mat& transitions,
+         const arma::mat& emissions,
+         const arma::mat& initial_state,
+         const S& );
 
     // Get possible outputs
     S get_alphabet() const;
     // Get vector of HMM states
     std::vector<unsigned> get_states() const;
-    // Get emission probability
-    double get_emission( unsigned, E ) const;
-    // Get transition probability
-    double get_transition( unsigned state_from, unsigned state_to ) const;
     // Get current HMM state
-    unsigned get_current_state() const;
+    unsigned get_current_states() const;
     // Set current HMM state
     void set_current_state( unsigned );
+    // Get vector of initial states probabilities
+    arma::mat get_initial_states() const;
+    // Get emissions probability
+    double get_emission( unsigned, E ) const;
+    // Get transitions probability
+    double get_transition( unsigned state_from, unsigned state_to ) const;
 
     // Move HMM machine to the next state and return an output char,
     // according to current transitions and emissions probabilities.
@@ -104,23 +112,16 @@ class Hmm
     // Generate random sequence up to given output value
     Path generate_sequence( E end_char );
     // Find Viterbi path for given sequence
-    // Assumes uniform initial distribution of probabilities
     Path find_viterbi_path( const S& sequence );
-    // Find Viterbi path for given sequence and initial state probabilities
-    Path find_viterbi_path( const S& sequence, const arma::mat& );
     // Learn HMM utilizing Baum-Welch algorithm
     // Returns updated initial state probabilities
-    arma::mat learn( const S& sequence, const arma::mat& );
-    arma::mat learn2( const S& sequence, const arma::mat& );
-    // Normalize transitions and emissions matrices
-    void normalize();
+    arma::mat learn( const S& sequence, const arma::mat&, double );
+    // arma::mat learn2( const S& sequence, const arma::mat& );
 
     // Print HMM object to stream
     friend std::ostream& operator<<( std::ostream& os, const Hmm<E, S>& h )
     {
-        os << "Current state: " << std::endl
-           << h.current_state << std::endl
-           << "Transitions: " << std::endl
+        os << "Transitions: " << std::endl
            << h.transitions << std::endl
            << "Emissions: " << std::endl
            << h.emissions;
@@ -139,11 +140,11 @@ class Hmm
 
 // Assumes random probability distribution for transitions and emissions
 template<class E, class S>
-Hmm<E, S>::Hmm( unsigned num_states, const S& alphabet, unsigned initial_state )
+Hmm<E, S>::Hmm( unsigned num_states, const S& alphabet )
     : current_state( initial_state )
     , alphabet( alphabet )
 {
-    arma::mat transitions_ = arma::randu<arma::mat>( num_states, num_states );
+    arma::mat arma::mat transitions_ = arma::randu<arma::mat>( num_states, num_states );
     arma::mat emissions_ = arma::randu<arma::mat>( num_states, alphabet.size() );
     Hmm temp = Hmm( transitions_, emissions_, alphabet, initial_state );
     emissions = temp.emissions;
@@ -325,7 +326,6 @@ typename Hmm<E, S>::Path Hmm<E, S>::generate_sequence( E end )
         result.states.push_back( current_state );
         auto next = Hmm<E, S>::next_step();
         result.sequence.push_back( next.first );
-        std::cout << result.sequence.back();
         result.prob += next.second;
     }
     return result;
@@ -416,255 +416,106 @@ typename Hmm<E, S>::Path Hmm<E, S>::find_viterbi_path( const S& sequence, const 
 
 } // Hmm::find_viterbi_path
 
-template<class E, class S>
-arma::mat Hmm<E, S>::learn2( const S& sequence, const arma::mat& pi )
-{
-    if( not ( pi.n_rows == 1 && pi.n_cols == transitions.n_cols ) ) {
-        throw std::invalid_argument( "Initial probabilities matrix invalid size!" );
-    }
+// template<class E, class S>
+// arma::mat Hmm<E, S>::learn2( const S& sequence, const arma::mat& pi )
+// {
+//     if( not ( pi.n_rows == 1 && pi.n_cols == transitions.n_cols ) ) {
+//         throw std::invalid_argument( "Initial probabilities matrix invalid size!" );
+//     }
 
-    unsigned num_states = get_states().size();
+//     unsigned num_states = get_states().size();
 
-    arma::mat tdelt( num_states, num_states );
-    tdelt.fill( 0 );
-    arma::mat tdeltmax( num_states, num_states );
-    tdeltmax.fill( 0 );
-    arma::mat edelt( num_states, alphabet.size() );
-    edelt.fill( 0 );
-    arma::mat edeltmax( num_states, alphabet.size() );
-    edeltmax.fill( 0 );
+//     arma::mat tdelt( num_states, num_states );
+//     tdelt.fill( 0 );
+//     arma::mat tdeltmax( num_states, num_states );
+//     tdeltmax.fill( 0 );
+//     arma::mat edelt( num_states, alphabet.size() );
+//     edelt.fill( 0 );
+//     arma::mat edeltmax( num_states, alphabet.size() );
+//     edeltmax.fill( 0 );
 
-    for( unsigned t = 0; t < sequence.size() - 1; ++t ) {
-        S subseq;
-        subseq.push_back( sequence[t] );
-        subseq.push_back( sequence[t + 1] );
-        auto best_path = find_viterbi_path( subseq, pi );
-        double best_prob = pow( 10, best_path.prob );
-        std::cout << "step " << subseq << ", best_prob = " << best_prob << std::endl;
+//     for( unsigned t = 0; t < sequence.size() - 1; ++t ) {
+//         S subseq;
+//         subseq.push_back( sequence[t] );
+//         subseq.push_back( sequence[t + 1] );
+//         auto best_path = find_viterbi_path( subseq, pi );
+//         double best_prob = pow( 10, best_path.prob );
+//         std::cout << "step " << subseq << ", best_prob = " << best_prob << std::endl;
 
-        arma::mat a( num_states, num_states );
-        a.fill( 0 );
-        arma::mat amax( num_states, num_states );
-        amax.fill( 0 );
+//         arma::mat a( num_states, num_states );
+//         a.fill( 0 );
+//         arma::mat amax( num_states, num_states );
+//         amax.fill( 0 );
 
-        arma::mat b( num_states, alphabet.size() );
-        b.fill( 0 );
-        arma::mat bmax( num_states, alphabet.size() );
-        bmax.fill( 0 );
+//         arma::mat b( num_states, alphabet.size() );
+//         b.fill( 0 );
+//         arma::mat bmax( num_states, alphabet.size() );
+//         bmax.fill( 0 );
 
-        // Update transition matrix
-        for( unsigned i = 0; i < num_states; ++i ) {
-            bmax( i, out_index( sequence[t] ) ) += best_prob;
-            bmax( i, out_index( sequence[t + 1] ) ) += best_prob;
-            for( unsigned j = 0; j < num_states; ++j ) {
-                double seq_prob = pi( i ) * get_emission( i, sequence[t] ) *
-                                  get_transition( i, j ) * get_emission( j, sequence[t + 1] );
+//         // Update transition matrix
+//         for( unsigned i = 0; i < num_states; ++i ) {
+//             bmax( i, out_index( sequence[t] ) ) += best_prob;
+//             bmax( i, out_index( sequence[t + 1] ) ) += best_prob;
+//             for( unsigned j = 0; j < num_states; ++j ) {
+//                 double seq_prob = pi( i ) * get_emission( i, sequence[t] ) *
+//                                   get_transition( i, j ) * get_emission( j, sequence[t + 1] );
 
-                a( i, j ) += seq_prob;
-                amax( i, j ) += best_prob;
+//                 a( i, j ) += seq_prob;
+//                 amax( i, j ) += best_prob;
 
-                b( i, out_index( sequence[t] ) ) =
-                  std::max( b( i, out_index( sequence[t] ) ), seq_prob );
+//                 b( i, out_index( sequence[t] ) ) =
+//                   std::max( b( i, out_index( sequence[t] ) ), seq_prob );
 
-                b( j, out_index( sequence[t + 1] ) ) =
-                  std::max( b( j, out_index( sequence[t + 1] ) ), seq_prob );
-            }
-        }
-        std::cout << "a = " << std::endl << a << std::endl;
-        std::cout << "amax = " << std::endl << amax << std::endl;
-        std::cout << "b = " << std::endl << b << std::endl;
-        std::cout << "bmax = " << std::endl << bmax << std::endl;
-        tdelt += a;
-        tdeltmax += amax;
-        edelt += b;
-        edeltmax += bmax;
-        // Update emissions matrix
-    }
-    std::cout << "tdelt = " << std::endl << tdelt << std::endl;
-    std::cout << "tdeltmax = " << std::endl << tdeltmax << std::endl;
-    std::cout << "edelt = " << std::endl << edelt << std::endl;
-    std::cout << "edeltmax = " << std::endl << edeltmax << std::endl;
+//                 b( j, out_index( sequence[t + 1] ) ) =
+//                   std::max( b( j, out_index( sequence[t + 1] ) ), seq_prob );
+//             }
+//         }
+//         std::cout << "a = " << std::endl << a << std::endl;
+//         std::cout << "amax = " << std::endl << amax << std::endl;
+//         std::cout << "b = " << std::endl << b << std::endl;
+//         std::cout << "bmax = " << std::endl << bmax << std::endl;
+//         tdelt += a;
+//         tdeltmax += amax;
+//         edelt += b;
+//         edeltmax += bmax;
+//         // Update emissions matrix
+//     }
+//     std::cout << "tdelt = " << std::endl << tdelt << std::endl;
+//     std::cout << "tdeltmax = " << std::endl << tdeltmax << std::endl;
+//     std::cout << "edelt = " << std::endl << edelt << std::endl;
+//     std::cout << "edeltmax = " << std::endl << edeltmax << std::endl;
 
-    transitions = tdelt / tdeltmax;
-    emissions = edelt / edeltmax;
-    normalize();
-    return pi;
-}
+//     transitions = tdelt / tdeltmax;
+//     emissions = edelt / edeltmax;
+//     normalize();
+//     return pi;
+// }
 
 // Learn HMM utilizing Baum-Welch algorithm
 // Returns updated initial state probabilities
 template<class E, class S>
-arma::mat Hmm<E, S>::learn( const S& sequence, const arma::mat& pi )
+arma::mat Hmm<E, S>::learn( const S& sequence, const arma::mat& pi, double learn_rate )
 {
     if( not ( pi.n_rows == 1 && pi.n_cols == transitions.n_cols ) ) {
         throw std::invalid_argument( "Initial probabilities matrix invalid size!" );
     }
 
-    unsigned num_states = get_states().size();
-
-    arma::mat a( num_states,
-                 sequence.size() ); // a( i, t ) is probability of seeing sequence
-                                    // from seq(0) to seq(t) ending in state i at t
-    arma::mat b( num_states,
-                 sequence.size() ); // b( i, t ) is probability of ending sequence
-                                    // from seq(t+1) to seq(T) begining in state i
-
-    // Forward procedure
-    for( unsigned t = 0; t < sequence.size(); ++t ) {
-        for( unsigned i = 0; i < num_states; ++i ) {
-            if( t == 0 ) {
-                a( i, t ) = get_emission( i, sequence[t] ) * pi( i );
-            } else {
-                double current_state_prob = 0;
-                for( unsigned j = 0; j < num_states; ++j ) {
-                    current_state_prob += a( i, t - 1 ) * get_transition( j, i );
-                }
-                a( i, t ) = get_emission( i, sequence[t] ) * current_state_prob;
-            }
-        } // for unsigned i
-    }     // for unsigned t
-
-    // std::cout << "alpha: " << std::endl;
-    // std::cout << a << std::endl;
-
-    // Backward procedure
-    for( int t = sequence.size() - 1; t >= 0; --t ) {
-        for( unsigned i = 0; i < num_states; ++i ) {
-            if( t == sequence.size() - 1 ) {
-                b( i, t ) = 1;
-            } else {
-                double next_state_prob = 0;
-                for( unsigned j = 0; j < num_states; ++j ) {
-                    next_state_prob += b( j, t + 1 ) * get_transition( i, j ) *
-                                       get_emission( j, sequence[t + 1] );
-                }
-                b( i, t ) = next_state_prob;
-            }
-        } // for unsigned i
-    }     // for unsigned t
-
-    // std::cout << "beta: " << std::endl;
-    // std::cout << b << std::endl;
-
-    // Update step
-    arma::mat sigma( num_states,
-                     sequence.size() ); // sigma( i, t ) is probability of being
-                                        // in state i at time t, assuming
-                                        // given sequence and initial HMM parameters
-
-    arma::cube theta( num_states,            // theta( i, j, t ) is probability of
-                      num_states,            // transition from state i to j in time t -> t + 1,
-                      sequence.size() - 1 ); // assuming given sequence
-                                             // and initial HMM parameters
-
-    arma::mat sigma_scaling_factor( 1, sequence.size() );
-    arma::mat theta_scaling_factor( 1, sequence.size() - 1 );
-    for( unsigned t = 0; t < sequence.size() - 1; ++t ) {
-        double sigma_f = 0;
-        double theta_f = 0;
-        for( unsigned k = 0; k < num_states; ++k ) {
-            sigma_f += a( k, t ) * b( k, t );
-            for( unsigned w = 0; w < num_states; ++w ) {
-                theta_f += a( k, t ) * get_transition( k, w ) * b( w, t + 1 ) *
-                           get_emission( w, sequence[t + 1] );
-            }
-        }
-        sigma_scaling_factor( t ) = sigma_f;
-        theta_scaling_factor( t ) = theta_f;
+    Path best_path = find_viterbi_path( sequence, pi );
+    for( unsigned i = 0; i < sequence.size() - 1; ++i ) {
+        transitions( best_path.states[i], best_path.states[i + 1] ) += learn_rate;
     }
-    // end of loop for t = sequence.size() for sigma
-    double sigma_f = 0;
-    for( unsigned k = 0; k < num_states; ++k ) {
-        sigma_f += a( k, sequence.size() - 1 ) * b( k, sequence.size() - 1 );
-        // std::cout << "a(s-1) = " << a( k, sequence.size() - 1 )
-        //           << ", b(s-1) = " << b( k, sequence.size() - 1 ) << std::endl;
+    for( unsigned i = 0; i < sequence.size(); ++i ) {
+        emissions( best_path.states[i], out_index( sequence[i] ) ) += learn_rate;
     }
-    sigma_scaling_factor( sequence.size() - 1 ) = sigma_f;
+    normalize();
 
-    // std::cout << "sigma_scaling: " << std::endl;
-    // std::cout << sigma_scaling_factor << std::endl;
-
-    // std::cout << "theta_scaling: " << std::endl;
-    // std::cout << theta_scaling_factor << std::endl;
-
-    for( unsigned t = 0; t < sequence.size() - 1; ++t ) {
-        for( unsigned i = 0; i < num_states; ++i ) {
-            sigma( i, t ) = sigma_scaling_factor( t ) != 0
-                              ? a( i, t ) * b( i, t ) / sigma_scaling_factor( t )
-                              : 0;
-            for( unsigned j = 0; j < num_states; ++j ) {
-                theta( i, j, t ) = theta_scaling_factor( t ) != 0
-                                     ? a( i, t ) * get_transition( i, j ) * b( j, t + 1 ) *
-                                         get_emission( j, sequence[t + 1] ) /
-                                         theta_scaling_factor( t )
-                                     : 0;
-            }
-        }
-    }
-    // end of loop for t = sequence.size() - 1 for sigma
-    for( unsigned i = 0; i < num_states; ++i ) {
-        sigma( i, sequence.size() - 1 ) = sigma_scaling_factor( sequence.size() - 1 ) != 0
-                                            ? a( i, sequence.size() - 1 ) *
-                                                b( i, sequence.size() - 1 ) /
-                                                sigma_scaling_factor( sequence.size() - 1 )
-                                            : 0;
+    arma::mat new_pi( pi );
+    new_pi( best_path.states[0] ) += learn_rate;
+    arma::mat sum_pi = arma::sum( new_pi, 1 );
+    for( unsigned i = 0; i < new_pi.n_elem; ++i ) {
+        new_pi( i ) = new_pi( i ) / sum_pi( 0 );
     }
 
-    // std::cout << "sigma: " << std::endl;
-    // std::cout << sigma << std::endl;
-
-    // std::cout << "theta: " << std::endl;
-    // std::cout << theta << std::endl;
-
-    arma::mat delta_transitions( num_states, num_states );
-    arma::mat delta_emissions( num_states, alphabet.size() );
-    delta_transitions.fill( 0 );
-    delta_emissions.fill( 0 );
-
-    for( unsigned i = 0; i < num_states; ++i ) {
-        double sigma_sum = 0;
-        for( unsigned t = 0; t < sequence.size() - 1; ++t ) {
-            sigma_sum += sigma( i, t );
-        }
-        for( unsigned j = 0; j < num_states; ++j ) {
-            double theta_sum = 0;
-            for( unsigned t = 0; t < sequence.size() - 1; ++t ) {
-                theta_sum += theta( i, j, t );
-            }
-            delta_transitions( i, j ) = sigma_sum != 0 ? theta_sum / sigma_sum : 0;
-        }
-    }
-
-    for( unsigned i = 0; i < num_states; ++i ) {
-        double sigma_sum = 0;
-        for( unsigned t = 0; t < sequence.size(); ++t ) {
-            sigma_sum += sigma( i, t );
-        }
-        for( unsigned e = 0; e < alphabet.size(); ++e ) {
-            double sigma_delt = 0;
-            for( unsigned t = 0; t < sequence.size(); ++t ) {
-                if( sequence[t] == alphabet[e] ) {
-                    sigma_delt += sigma( i, t );
-                }
-            }
-            delta_emissions( i, e ) = sigma_sum != 0 ? sigma_delt / sigma_sum : 0;
-        }
-    }
-
-    transitions += 100 * delta_transitions;
-    emissions += 100 * delta_emissions;
-    // for( unsigned t = 0; t < sequence.size(); ++t ) {
-    //     for( unsigned k = 0; k < alphabet.size(); ++k ) {
-    //         if( sequence[t] == alphabet[k] ) {
-    //             emissions.col( k ) = delta_emissions.col( k );
-    //         }
-    //     }
-    // }
-
-    arma::mat new_pi( 1, num_states );
-    for( unsigned i = 0; i < num_states; ++i ) {
-        new_pi( i ) = sigma( i, 0 );
-    }
     return new_pi;
 
 } // Hmm::learn
@@ -676,6 +527,7 @@ void Hmm<E, S>::normalize()
     unsigned num_states = emissions.n_rows;
     arma::mat stran = arma::sum( transitions, 1 );
     arma::mat semis = arma::sum( emissions, 1 );
+    arma::mat sinit = arma::sum( initial_state, 1 );
     for( unsigned i = 0; i < num_states; ++i ) {
         for( unsigned j = 0; j < num_states; ++j ) {
             transitions( i, j ) = transitions( i, j ) / stran( i );
@@ -683,37 +535,10 @@ void Hmm<E, S>::normalize()
         for( unsigned k = 0; k < alphabet.size(); ++k ) {
             emissions( i, k ) = emissions( i, k ) / semis( i );
         }
+        initial_state( i ) = initial_state( i ) / sinit( 0 );
     }
 }
 
-// ***************
-// FRIEND METHODS
-// ***************
-
-// Print HMM path to stream
-// template<class E, class S>
-// std::ostream& operator<<( std::ostream& os, typename Hmm<E, S>::Path const& path )
-// {
-//     os << "sequence: " << path.sequence << ", states = ";
-//     for( auto s: path.states ) {
-//         os << s << " ";
-//     }
-//     os << ", prob = " << pow( 10, path.prob );
-//     return os;
-// }
-
-// Print HMM object to stream
-// template<class E, class S>
-// std::ostream& operator<<( std::ostream& os, const Hmm<E, S>& h )
-// {
-//     os << "Current state: " << std::endl
-//        << h.current_state << std::endl
-//        << "Transitions: " << std::endl
-//        << h.transitions << std::endl
-//        << "Emissions: " << std::endl
-//        << h.emissions;
-//     return os;
-// }
 }} // namespace scientific::ml
 
 #endif // SCIENTIFIC_ML_SMART_HMM_H
