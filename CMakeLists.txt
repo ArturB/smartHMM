@@ -35,12 +35,13 @@ include(RequireLibrary)
 # Check binary dependencies
 require_library(openblas "")
 require_library(armadillo "")
+require_library(omp "")
 
 # Debug and release build
 option ( ENABLE_DEBUG "Enable debugging options (bugreports and developers only)" OFF )
 option ( ENABLE_RELEASE "Enable compiler -O3 optimization flags" ON )
 
-set( CMAKE_CXX_FLAGS "-Wall " )
+set( CMAKE_CXX_FLAGS "-Wall -fopenmp " )
 if ( ENABLE_DEBUG )
     set( CMAKE_BUILD_TYPE "DEBUG" )
     string ( APPEND CMAKE_CXX_FLAGS "-g -DDEBUG " )

@@ -70,9 +70,10 @@ class Hmm
     arma::mat emissions;
     arma::mat emissions_prim;
     S alphabet;
+    std::vector<S> learning_buffer;
 
     // Normalize given matrix in rows
-    arma::mat rows_normalize( const arma::mat& ) const;
+    arma::mat normalize_rows( const arma::mat& ) const;
     // Normalize transitions and emissions matrices
     void normalize();
     // Return internal index of given output character
@@ -124,10 +125,11 @@ class Hmm
     // are not instantly updated, but rather learning state
     // is accumulated in *_prim matrices, and then applied
     // when calling update() method
-    void learn( const S& sequence, double, bool update_params = true );
+    void learn( const S& sequence, double, unsigned batch_size );
+    void learn_parallel( const S& sequence, double );
     // Update transitions and emisisons matrices
     // with accumulated learning state
-    void update();
+    void update( double );
 
     // Print HMM object to stream
     friend std::ostream& operator<<( std::ostream& os, const Hmm<E, S>& h )
@@ -276,6 +278,7 @@ void Hmm<E, S>::set_current_state( unsigned state )
 // PRIVATE MEMBERS
 // ****************
 
+// Normalize given matrix in rows
 template<class E, class S>
 arma::mat Hmm<E, S>::normalize_rows( const arma::mat& mat ) const
 {
@@ -290,23 +293,14 @@ arma::mat Hmm<E, S>::normalize_rows( const arma::mat& mat ) const
     return result;
 }
 
+// Normalize transitions and emissions matrices
 template<class E, class S>
 void Hmm<E, S>::normalize()
 {
     // Scale given probabilities to sum 1 for each state
-    unsigned num_states = emissions.n_rows;
-    arma::mat stran = arma::sum( transitions, 1 );
-    arma::mat semis = arma::sum( emissions, 1 );
-    arma::mat sinit = arma::sum( initial_states, 1 );
-    for( unsigned i = 0; i < num_states; ++i ) {
-        for( unsigned j = 0; j < num_states; ++j ) {
-            transitions( i, j ) = transitions( i, j ) / stran( i );
-        }
-        for( unsigned k = 0; k < alphabet.size(); ++k ) {
-            emissions( i, k ) = emissions( i, k ) / semis( i );
-        }
-        initial_states( i ) = initial_states( i ) / sinit( 0 );
-    }
+    transitions = normalize_rows( transitions );
+    emissions = normalize_rows( emissions );
+    initial_states = normalize_rows( initial_states );
 }
 
 // Auxiliary function
@@ -471,40 +465,81 @@ typename Hmm<E, S>::Path Hmm<E, S>::find_viterbi_path( const S& sequence )
 
 // Learn HMM utilizing Brodzki-Viterbi algorithm
 template<class E, class S>
-void Hmm<E, S>::learn( const S& sequence, double learn_rate, bool update_params )
+void Hmm<E, S>::learn( const S& sequence, double learn_rate, unsigned batch_size )
 {
     Path best_path = find_viterbi_path( sequence );
     for( unsigned i = 0; i < sequence.size() - 1; ++i ) {
-        transitions_prim( best_path.states[i], best_path.states[i + 1] ) += learn_rate;
+        transitions_prim( best_path.states[i], best_path.states[i + 1] )++;
     }
     for( unsigned i = 0; i < sequence.size(); ++i ) {
-        emissions_prim( best_path.states[i], out_index( sequence[i] ) ) += learn_rate;
+        emissions_prim( best_path.states[i], out_index( sequence[i] ) )++;
     }
-    initial_states_prim( best_path.states[0] ) += learn_rate;
+    initial_states_prim( best_path.states[0] )++;
 
-    unsigned num_states = transitions.n_cols;
-    arma::mat transitions_noise = arma::randu<arma::mat>( num_states, num_states );
-    arma::mat emissions_noise = arma::randu<arma::mat>( num_states, alphabet.size() );
+    if( learn_rate > 0.1 ) {
+        unsigned num_states = transitions.n_cols;
+        arma::mat transitions_noise =
+          normalize_rows( arma::randu<arma::mat>( num_states, num_states ) );
+        arma::mat emissions_noise =
+          normalize_rows( arma::randu<arma::mat>( num_states, alphabet.size() ) );
+        arma::mat initial_states_noise =
+          normalize_rows( arma::randu<arma::mat>( 1, num_states ) );
+
+        double noise_weight = learn_rate * ( 1 - pow( 10, best_path.prob / sequence.size() ) );
+        transitions_prim =
+          noise_weight * transitions_noise + ( 1 - noise_weight ) * transitions_prim;
+        emissions_prim = noise_weight * emissions_noise + ( 1 - noise_weight ) * emissions_prim;
+        initial_states_prim =
+          noise_weight * initial_states_noise + ( 1 - noise_weight ) * initial_states_prim;
+    }
 
     if( update_params ) {
-        update();
+        update( learn_rate );
     }
 } // Hmm::learn
+
+template<class E, class S>
+void Hmm<E, S>::learn_parallel( const S& sequence, double learn_rate )
+{
+    learning_buffer.push_back( sequence );
+    const unsigned NUM_THREADS = 8;
+
+    if( learning_buffer.size() == 1024 ) {
+
+        // Parallel threads work
+#pragma omp parallel for
+        for( unsigned i = 0; i < NUM_THREADS; ++i ) {
+
+            // One thread
+            for( unsigned j = 0; j < std::floor( learning_buffer.size() / NUM_THREADS ); ++j ) {
+                learn( learning_buffer[NUM_THREADS * i + j], learn_rate, false );
+            }
+        }
+
+        // After processing data in parallel, update params
+        update( learn_rate );
+        learning_buffer.clear();
+
+    } // if
+
+    // After processing data in parallel, update params
+    update( learn_rate );
+    learning_buffer.clear();
+}
 
 // Update transitions and emisisons matrices
 // with accumulated learning state
 template<class E, class S>
-void Hmm<E, S>::update()
+void Hmm<E, S>::update( double learn_rate )
 {
-    transitions += transitions_prim;
-    emissions += emissions_prim;
-    initial_states += initial_states_prim;
+    transitions += learn_rate * transitions_prim;
+    emissions += learn_rate * emissions_prim;
+    initial_states += learn_rate * initial_states_prim;
     normalize();
     transitions_prim.fill( 0 );
     emissions_prim.fill( 0 );
     initial_states_prim.fill( 0 );
 }
-
 }} // namespace scientific::ml
 
 #endif // SCIENTIFIC_ML_SMART_HMM_H

@@ -22,7 +22,7 @@ add_executable(
 )
 target_link_libraries(
     smarthmm.test
-    PUBLIC smarthmm
+    PUBLIC smarthmm omp
 )
 include_directories(
     ${CMAKE_SOURCE_DIR}/src/scientific/ml

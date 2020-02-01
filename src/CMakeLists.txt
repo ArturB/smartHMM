@@ -27,6 +27,7 @@ set_target_properties(
 target_link_libraries(
     smarthmm
     armadillo
+    omp
 )
 install (
     TARGETS smarthmm
