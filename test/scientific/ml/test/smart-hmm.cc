@@ -29,11 +29,9 @@ int main()
     // std::string example = "nnnnneennn";
 
     std::cout << "Initializing HMM object... " << std::endl;
-    const unsigned NUM_STATES = 40;
-    scientific::ml::Hmm<char, std::string> h( NUM_STATES, "artubodzki.g$", 0 );
+    const unsigned NUM_STATES = 100;
+    scientific::ml::Hmm<char, std::string> h( NUM_STATES, "artubodzki.g$" );
     std::cout << "Done!" << std::endl;
-    arma::mat pi( 1, NUM_STATES );
-    pi.fill( 1 / double( NUM_STATES ) );
     std::string example = "artur.brodzki.org$";
 
     // std::cout << "Initial HMM: " << std::endl;
@@ -42,10 +40,10 @@ int main()
 
     std::cout << "Learning model..." << std::endl;
     for( unsigned i = 0; i < 10; ++i ) {
-        auto path = h.find_viterbi_path( example, pi );
+        auto path = h.find_viterbi_path( example );
         std::cout << "Learn step " << i + 1 << ", " << path
                   << ", prob/char = " << pow( 10, path.prob / example.size() ) << std::endl;
-        pi = h.learn( example, pi, 2 );
+        h.learn( example, 5 );
     }
 
     // std::cout << "New HMM: " << std::endl;
