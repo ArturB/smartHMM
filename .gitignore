@@ -1,9 +1,4 @@
-bin/*
-!bin/.gitkeep
-
-build/*
-!build/.gitkeep
-
-data/*
-
+bin
+build
+data
 .vscode

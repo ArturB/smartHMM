@@ -1,15 +1,5 @@
 # **********************************************************************
 # Copyright (c) Artur M. Brodzki 2020. All rights reserved.
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
 # **********************************************************************
 
 cmake_minimum_required ( VERSION 3.4.3 )
@@ -25,7 +15,7 @@ set (CMAKE_CXX_STANDARD_REQUIRED ON)
 # Necessary includes
 set(CMAKE_MODULE_PATH
     ${CMAKE_MODULE_PATH}
-    ${CMAKE_SOURCE_DIR}/cmake
+    ${CMAKE_SOURCE_DIR}
 )
 include(CPack)
 include(CheckCXXCompilerFlag)
@@ -54,15 +44,15 @@ if ( ENABLE_RELEASE )
     string ( APPEND CMAKE_CXX_FLAGS "-O3 " )
 endif ( ENABLE_RELEASE )
 
+# Output dirs
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
 # Process src dir
 add_subdirectory ( src )
 # Process test dir
 add_subdirectory( test )
-
-# Output dirs
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
 
 # CPack configuration
 set (CPACK_GENERATOR TGZ)

@@ -12,7 +12,7 @@
 // GNU General Public License for more details.
 // **********************************************************************
 
-#include <smart-hmm.h>
+#include <scientific/ml/smart-hmm.h>
 
 int main()
 {
@@ -23,8 +23,9 @@ int main()
 
     std::cout << "Initializing HMM object... " << std::endl;
     const unsigned NUM_STATES = 8;
-    const unsigned TRAIN_SIZE = 30000000;
-    const unsigned TEST_SIZE = 2000000;
+    const unsigned TRAIN_SIZE = 100000;
+    const unsigned TEST_SIZE = 10000;
+    const unsigned BATCH_SIZE = 4096;
     const double LEARN_RATE = 0.0001;
     const double REJECT_THRESHOLD = -1;
 
@@ -41,18 +42,28 @@ int main()
     std::cout.imbue( std::locale( "" ) );
 
     while( getline( dataset_file, line ) && processed_lines < TRAIN_SIZE ) {
-        if( line.size() < 4 ) {
+        if( line.size() < 5 ) {
             continue;
         }
-        h.learn( line + "$", LEARN_RATE, false );
+        h.learn_parallel( line + "$", LEARN_RATE, BATCH_SIZE );
         ++processed_lines;
-        if( processed_lines % 1024 == 0 ) {
-            h.update( LEARN_RATE );
+        if( processed_lines % 253 == 0 ) {
             std::cout << "\rProcessed lines: " << processed_lines << "    " << std::flush;
         }
     }
 
+    // Test copy constructor
+    std::cout << std::endl;
+    scientific::ml::Hmm<char, std::string> h2( h );
+    std::cout << "Copy constructor test: " << ( h == h2 ) << std::endl;
+
+    // Test serialization
+    h.save( "h.hmm" );
+    h2.load( "h.hmm" );
+    std::cout << "Serialization test: " << ( h == h2 ) << std::endl;
+
     // Testing valid class
+    std::cout << std::endl;
     std::cout << "Testing model..." << std::endl;
     std::cout << "Non-malicious class: " << std::endl;
     processed_lines = 0;
@@ -63,12 +74,14 @@ int main()
     while( getline( dataset_file, line ) && processed_lines < TEST_SIZE ) {
         auto path = h.find_viterbi_path( line + "$" );
         double score = ( path.prob / line.size() ) + log10( alphabet.size() );
-
-        score_sum += score;
-        min_score = std::min( min_score, score );
-        if( score < REJECT_THRESHOLD ) {
+        if( score < -100000 ) {
+            ++false_positive;
+            continue;
+        } else if( score < REJECT_THRESHOLD ) {
             ++false_positive;
         }
+        score_sum += score;
+        min_score = std::min( min_score, score );
 
         ++processed_lines;
         if( processed_lines % 253 == 0 ) {

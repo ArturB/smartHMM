@@ -13,21 +13,26 @@
 // **********************************************************************
 
 #ifndef SCIENTIFIC_ML_SMART_HMM_H
-#define SCIENTIFIC_ML_SMART_HMM_H
+#    define SCIENTIFIC_ML_SMART_HMM_H
 
-#include <algorithm>
-#include <armadillo>
-#include <cmath>
-#include <cstdio>
-#include <cstdlib>
-#include <fstream>
-#include <iostream>
-#include <limits>
-#include <sstream>
-#include <string>
-#include <unistd.h>
-#include <unordered_map>
-#include <vector>
+#    include <algorithm>
+#    include <armadillo>
+#    include <cereal/archives/binary.hpp>
+#    include <cereal/types/string.hpp>
+#    include <cereal/types/unordered_map.hpp>
+#    include <cereal/types/vector.hpp>
+#    include <cmath>
+#    include <cstdio>
+#    include <cstdlib>
+#    include <fstream>
+#    include <iostream>
+#    include <limits>
+#    include <mutex>
+#    include <sstream>
+#    include <string>
+#    include <unistd.h>
+#    include <unordered_map>
+#    include <vector>
 
 namespace scientific { namespace ml {
 
@@ -70,7 +75,9 @@ class Hmm
     arma::mat emissions;
     arma::mat emissions_prim;
     S alphabet;
+    unsigned processed_lines;
     std::vector<S> learning_buffer;
+    std::mutex mutex;
 
     // Normalize given matrix in rows
     arma::mat normalize_rows( const arma::mat& ) const;
@@ -84,6 +91,8 @@ class Hmm
     static unsigned random_element( const arma::mat& );
 
   public:
+    // Copy constructor
+    Hmm( const Hmm& );
     // Assumes random, uniformly distributed probabilities for transitions and emissions
     Hmm( unsigned num_states, const S& );
     // Construct an HMM object with given transitions and emissions probabilities
@@ -126,10 +135,17 @@ class Hmm
     // is accumulated in *_prim matrices, and then applied
     // when calling update() method
     void learn( const S& sequence, double, unsigned batch_size );
-    void learn_parallel( const S& sequence, double );
+    void learn_parallel( const S& sequence, double, unsigned batch_size );
     // Update transitions and emisisons matrices
     // with accumulated learning state
     void update( double );
+
+    // Serialize and deserialize methods
+    void save( const std::string& );
+    void load( const std::string& );
+
+    // Comparison operator
+    bool operator==( const Hmm<E, S>& ) const;
 
     // Print HMM object to stream
     friend std::ostream& operator<<( std::ostream& os, const Hmm<E, S>& h )
@@ -147,6 +163,22 @@ class Hmm
 // CONSTRUCTORS
 // *************
 
+// Copy constructor
+template<class E, class S>
+Hmm<E, S>::Hmm( const Hmm<E, S>& hmm )
+    : current_state( hmm.current_state )
+    , initial_states( hmm.initial_states )
+    , initial_states_prim( hmm.initial_states_prim )
+    , transitions( hmm.transitions )
+    , transitions_prim( hmm.transitions_prim )
+    , emissions( hmm.emissions )
+    , emissions_prim( hmm.emissions_prim )
+    , alphabet( hmm.alphabet )
+    , processed_lines( hmm.processed_lines )
+    , learning_buffer( hmm.learning_buffer )
+{
+}
+
 // Assumes random probability distribution for transitions and emissions
 template<class E, class S>
 Hmm<E, S>::Hmm( unsigned num_states, const S& alphabet )
@@ -158,6 +190,7 @@ Hmm<E, S>::Hmm( unsigned num_states, const S& alphabet )
     , emissions( arma::randu<arma::mat>( num_states, alphabet.size() ) )
     , emissions_prim( num_states, alphabet.size() )
     , alphabet( alphabet )
+    , processed_lines( 0 )
 {
     normalize();
     initial_states_prim.fill( 0 );
@@ -180,6 +213,7 @@ Hmm<E, S>::Hmm( const arma::mat& transitions,
     , emissions( emissions )
     , emissions_prim( emissions )
     , alphabet( alphabet )
+    , processed_lines( 0 )
 {
     bool valid_sizes =
       initial_states.n_cols == transitions.n_cols && transitions.n_rows == transitions.n_cols &&
@@ -476,55 +510,34 @@ void Hmm<E, S>::learn( const S& sequence, double learn_rate, unsigned batch_size
     }
     initial_states_prim( best_path.states[0] )++;
 
-    if( learn_rate > 0.1 ) {
-        unsigned num_states = transitions.n_cols;
-        arma::mat transitions_noise =
-          normalize_rows( arma::randu<arma::mat>( num_states, num_states ) );
-        arma::mat emissions_noise =
-          normalize_rows( arma::randu<arma::mat>( num_states, alphabet.size() ) );
-        arma::mat initial_states_noise =
-          normalize_rows( arma::randu<arma::mat>( 1, num_states ) );
-
-        double noise_weight = learn_rate * ( 1 - pow( 10, best_path.prob / sequence.size() ) );
-        transitions_prim =
-          noise_weight * transitions_noise + ( 1 - noise_weight ) * transitions_prim;
-        emissions_prim = noise_weight * emissions_noise + ( 1 - noise_weight ) * emissions_prim;
-        initial_states_prim =
-          noise_weight * initial_states_noise + ( 1 - noise_weight ) * initial_states_prim;
-    }
-
-    if( update_params ) {
+    mutex.lock();
+    ++processed_lines;
+    if( processed_lines % batch_size == 0 ) {
         update( learn_rate );
     }
+    mutex.unlock();
 } // Hmm::learn
 
 template<class E, class S>
-void Hmm<E, S>::learn_parallel( const S& sequence, double learn_rate )
+void Hmm<E, S>::learn_parallel( const S& sequence, double learn_rate, unsigned batch_size )
 {
     learning_buffer.push_back( sequence );
     const unsigned NUM_THREADS = 8;
+    const unsigned THREAD_BATCH_SIZE = batch_size / NUM_THREADS;
 
-    if( learning_buffer.size() == 1024 ) {
+    if( learning_buffer.size() == batch_size ) {
 
         // Parallel threads work
-#pragma omp parallel for
+#    pragma omp parallel for
         for( unsigned i = 0; i < NUM_THREADS; ++i ) {
 
             // One thread
-            for( unsigned j = 0; j < std::floor( learning_buffer.size() / NUM_THREADS ); ++j ) {
-                learn( learning_buffer[NUM_THREADS * i + j], learn_rate, false );
+            for( unsigned j = 0; j < THREAD_BATCH_SIZE; ++j ) {
+                learn( learning_buffer[i * THREAD_BATCH_SIZE + j], learn_rate, batch_size );
             }
         }
-
-        // After processing data in parallel, update params
-        update( learn_rate );
         learning_buffer.clear();
-
     } // if
-
-    // After processing data in parallel, update params
-    update( learn_rate );
-    learning_buffer.clear();
 }
 
 // Update transitions and emisisons matrices
@@ -540,6 +553,104 @@ void Hmm<E, S>::update( double learn_rate )
     emissions_prim.fill( 0 );
     initial_states_prim.fill( 0 );
 }
+
+// **********************
+// SERIALIZATION METHODS
+// **********************
+
+// Serialize armadillo
+template<class Archive>
+save( Archive& ar, const arma::Mat<eT>& m )
+{
+    arma::uword n_rows = m.n_rows;
+    arma::uword n_cols = m.n_cols;
+    ar( n_rows );
+    ar( n_cols );
+    ar( cereal::binary_data( reinterpret_cast<void* const>( const_cast<eT*>( m.memptr() ) ),
+                             static_cast<std::size_t>( n_rows * n_cols * sizeof( eT ) ) ) );
+}
+
+template<class Archive, class eT>
+typename std::enable_if<
+  cereal::traits::is_input_serializable<cereal::BinaryData<eT>, Archive>::value,
+  void>::type
+load( Archive& ar, arma::Mat<eT>& m )
+{
+    arma::uword n_rows;
+    arma::uword n_cols;
+    ar( n_rows );
+    ar( n_cols );
+
+    m.resize( n_rows, n_cols );
+
+    ar( cereal::binary_data( reinterpret_cast<void* const>( const_cast<eT*>( m.memptr() ) ),
+                             static_cast<std::size_t>( n_rows * n_cols * sizeof( eT ) ) ) );
+}
+
+template<class E, class S>
+void Hmm<E, S>::save( const std::string& filename )
+{
+    std::ofstream fs( filename );
+    cereal::BinaryOutputArchive oarchive( fs );
+    oarchive( current_state,
+              initial_states,
+              initial_states_prim,
+              transitions,
+              transitions_prim,
+              emissions,
+              emissions_prim,
+              alphabet,
+              processed_lines );
+    fs.close();
+}
+
+template<class E, class S>
+void Hmm<E, S>::load( const std::string& filename )
+{
+    std::ifstream fs( filename );
+    cereal::BinaryInputArchive iarchive( fs );
+    iarchive( current_state,
+              initial_states,
+              initial_states_prim,
+              transitions,
+              transitions_prim,
+              emissions,
+              emissions_prim,
+              alphabet,
+              processed_lines );
+    fs.close();
+}
+
+// ********************
+// COMPARISON OPERATOR
+// ********************
+template<class E, class S>
+bool Hmm<E, S>::operator==( const Hmm<E, S>& operand2 ) const
+{
+    return current_state == operand2.current_state &&
+           arma::approx_equal( initial_states, operand2.initial_states, "absdiff", 0.0001 ) &&
+           arma::approx_equal(
+             initial_states_prim, operand2.initial_states_prim, "absdiff", 0.0001 ) &&
+           arma::approx_equal( transitions, operand2.transitions, "absdiff", 0.0001 ) &&
+           arma::approx_equal(
+             transitions_prim, operand2.transitions_prim, "absdiff", 0.0001 ) &&
+           arma::approx_equal( emissions, operand2.emissions, "absdiff", 0.0001 ) &&
+           arma::approx_equal( emissions_prim, operand2.emissions_prim, "absdiff", 0.0001 ) &&
+           alphabet == operand2.alphabet && processed_lines == operand2.processed_lines;
+}
+
 }} // namespace scientific::ml
 
 #endif // SCIENTIFIC_ML_SMART_HMM_H
+
+// unsigned current_state;
+// arma::mat initial_states;
+// arma::mat initial_states_prim;
+// arma::mat transitions;
+// arma::mat transitions_prim;
+// arma::mat emissions;
+// arma::mat emissions_prim;
+// S alphabet;
+// unsigned processed_lines;
+// std::vector<S> learning_buffer;
+// std::mutex mutex;
